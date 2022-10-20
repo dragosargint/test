@@ -1,3 +1,7 @@
-$(eval $(call addlib,apphelloworld))
+$(eval $(call addlib,test))
 
-APPHELLOWORLD_SRCS-y += $(APPHELLOWORLD_BASE)/main.c
+TEST_SRCS-y += $(TEST_BASE)/test_pr_564.c
+TEST_SRCS-y += $(TEST_BASE)/test_pr_565.c
+TEST_SRCS-y += $(TEST_BASE)/main.c
+TEST_SRCS-y += $(TEST_BASE)/helper.s
+UK_PROVIDED_SYSCALLS-$(CONFIG_LIBVFSCORE) += fork-0
