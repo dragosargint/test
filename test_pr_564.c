@@ -30,9 +30,9 @@ static int FN2 = 0;
 static int DTOR_CALLED = 0;
 static int DTOR = 0;
 
-__thread long tls1 = 0xaabbccdd;
-__thread long tls2 = 0xaabbccdd;
-__thread long tls3 = 0xaabbccdd;
+static __thread long tls1 = 0xaabbccdd;
+static __thread long tls2 = 0xaabbccdd;
+static __thread long tls3 = 0xaabbccdd;
 
 void generic_dtor(struct uk_thread *t)
 {

@@ -1,5 +1,6 @@
 #include <uk/syscall.h>
 #include <uk/print.h>
+#include <uk/thread.h>
 
 void call_binary_fork();
 
@@ -62,8 +63,11 @@ UK_SYSCALL_R_DEFINE(int, fork)
 
 void test_pr_565()
 {
+	/* save the real tls */
+	unsigned long orig = ukplat_tlsp_get();
+
 	/* mimics an userland tls */
-	ukplat_tlsp_set(TLS_REGION);
+	ukplat_tlsp_set((unsigned long) TLS_REGION);
 	
 	if ((void *) ukplat_tlsp_get() == TLS_REGION) {
 		PRINT_GOOD("ULTLS base is at %p", TLS_REGION);
@@ -79,6 +83,10 @@ void test_pr_565()
 		PRINT_BAD("ULTLS %p != 0x%lx after syscall return", TLS_REGION, ukplat_tlsp_get());
 	}
 
+	/* restore the original tls */
+	ukplat_tlsp_set(orig);
+	
 	is_binary = 0;
 	call_fork();
+
 }
