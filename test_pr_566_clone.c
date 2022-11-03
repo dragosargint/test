@@ -5,6 +5,8 @@
 extern int main_thread_tid;
 int __clone_child_thread_tid;
 unsigned long __clone_child_tls_ptr;
+unsigned long __clone_child_tls_area;
+unsigned long __clone_child_tls_ptr;
 struct uk_thread *__clone_child_uk_thread_ptr = NULL;
 __thread unsigned long per_thread_var = 0xdeadbeef;
 
@@ -21,15 +23,15 @@ static int clone_thread_fun(void *arg)
 	} else {
 		PRINT_BAD("Tid assignation doesn't work. child_tid:%d == main_thread_tid:%d", __clone_child_thread_tid, main_thread_tid);
 	}
-	
+
 	if (__clone_child_tls_ptr == (unsigned long) ukplat_tlsp_get()) {
 		PRINT_GOOD("Child TLS is set correctly to 0x%lx", __clone_child_tls_ptr);
 	} else {
 		PRINT_BAD("Child TLS:0x%lx != ukplat_tlsp_get():0x%lx", __clone_child_tls_ptr, ukplat_tlsp_get());
 	}
 
-	tls_end = (unsigned long) ukplat_tlsp_get();
-	tls_start = (unsigned long) ukplat_tlsp_get() - (unsigned long) ukarch_tls_area_size();
+	tls_start = __clone_child_tls_area;
+	tls_end = __clone_child_tls_area + (unsigned long) ukarch_tls_area_size();
 	if ( per_thread_var_addr <= tls_end && per_thread_var_addr >= tls_start) {
 		PRINT_GOOD("per_thread_var is placed correctly in the TLS section of CHILD");
 		PRINT_GOOD("\ttls_start:0x%lx <= &per_thread_var:0x%lx <= tls_end:0x%lx", tls_start, per_thread_var_addr, tls_end);
@@ -37,6 +39,21 @@ static int clone_thread_fun(void *arg)
 		PRINT_BAD("per_thread_var is NOT placed correctly in the TLS sectio of CHILD");
 		PRINT_BAD("\t&per_thread_var:0x%lx NOT in [tls_start:0x%lx, tls_end:0x%lx]", per_thread_var_addr, tls_start, tls_end);
 	}
+
+#ifdef CONFIG_ARCH_X86_64
+#define TLSP_CMP_OP <=
+#endif
+#ifdef CONFIG_ARCH_ARM_64
+#define TLSP_CMP_OP >=
+#endif
+	if ( per_thread_var_addr TLSP_CMP_OP __clone_child_tls_ptr) {
+		PRINT_GOOD("per_thread_var is placed on the correct side of the tlsp");
+		PRINT_GOOD("\t&per_thread_var:0x%lx " STRINGIFY(TLSP_CMP_OP) " tlsp:0x%lx", per_thread_var_addr, __clone_child_tls_ptr);
+	} else {
+		PRINT_BAD("per_thread_var is placed on the wrong side of tlsp");
+		PRINT_BAD("\t&per_thread_var:0x%lx NOT " STRINGIFY(TLSP_CMP_OP) " tlsp:0x%lx", per_thread_var_addr, __clone_child_tls_ptr);
+	}
+#undef TLSP_CMP_OP
 
 	per_thread_var = 0xbadbabee;
 
@@ -46,40 +63,27 @@ static int clone_thread_fun(void *arg)
 
 void test_clone()
 {
-	/* In this test we're trying to do what musl does with the clone syscall.
-	 * Layout of the mapping:
-	 * map ----------------------------------------------------------------
-	 *                     ^ 
-	 *                     |           STACK 
-	 *                     v 
-	 * stack --------------------------------------------------------------- 
-	 *                     ^           ^ 
-	 *                     |           |       TLS SPACE 
-	 *                     |           v 
-	 *               new ->|------------------------------------------------
-	 *		       |	   ^
-	 *		       |	   |	   PRIV Data
-	 *		       v	   v
-	 *----------------------------------------------------------------------			
-	 */
-	size_t stack_size = 8 * 4096; // not using the deafault size
+	/* In this test we're trying to do what musl does with the clone syscall. */
+
+	size_t stack_size = 8 * 4096; // not using the default size
 	size_t tls_size = ukarch_tls_area_size();
-	size_t priv_size = ukarch_tls_tcb_size();
-	void *map = mmap(NULL, stack_size + tls_size + priv_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	void *new = __uk_copy_tls(map + stack_size + tls_size); // function defined in __uk_init_tls.c glue src file (musl)
+	__u8 *map = mmap(NULL, stack_size + tls_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	__clone_child_tls_area = map + stack_size;
+	void *tcb = __uk_copy_tls((void*) __clone_child_tls_area); // function defined in __uk_init_tls.c glue src file (musl)
 	void *stack = map +  stack_size;
 	int ctid;
-	
+
 	/* these flags are used by pthread_create() when a new thread is createad */
 	unsigned flags = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND
                 | CLONE_THREAD | CLONE_SYSVSEM | CLONE_SETTLS
                 | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID | CLONE_DETACHED;
 
-	__clone_child_tls_ptr = (unsigned long) new;
+	__clone_child_tls_ptr = (unsigned long) ukarch_tls_tlsp(__clone_child_tls_area);
 	/* Use the clone wrapper from musl.
 	 * NB: this will call SYS_exit after clone_thread_fun() returns
 	 */
-	__clone(clone_thread_fun, stack, flags, new, &ctid, new, &ctid);
+	// __clone(func, stack, flags, arg, ptid, tls, ctid)
+	__clone(clone_thread_fun, stack, flags, tcb, &ctid, __clone_child_tls_ptr, &ctid);
 	/* clone will force the execution of child after it creates it,
          * but just to be sure the child executes and finishes,
 	 * we place some sleeps here.

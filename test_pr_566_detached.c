@@ -8,6 +8,8 @@
 
 void *__detached_child_map = NULL;
 size_t __detached_child_map_size = 0;
+unsigned long __detached_child_tls_area;
+unsigned long __detached_child_tls_ptr;
 int UNMAP_CB_CALLED = 0;
 struct uk_thread *__detached_child_uk_thread_ptr;
 
@@ -58,28 +60,14 @@ __noreturn static void detached_fun(void *args)
 
 void test_detached()
 {
-	/* In this test we're trying to do what musl does for detached threads.
-	 * Layout of the mapping:
-	 * map ----------------------------------------------------------------
-	 *                     ^ 
-	 *                     |           STACK 
-	 *                     v 
-	 * stack --------------------------------------------------------------- 
-	 *                     ^           ^ 
-	 *                     |           |       TLS SPACE 
-	 *                     |           v 
-	 *               new ->|------------------------------------------------
-	 *		       |	   ^
-	 *		       |	   |	   PRIV Data
-	 *		       v	   v
-	 *----------------------------------------------------------------------			
-	 */
-	size_t stack_size = 8 * 4096; // not using the deafault size
+	/* In this test we're trying to do what musl does for detached threads. */
+
+	size_t stack_size = 8 * 4096; // not using the default size
 	size_t tls_size = ukarch_tls_area_size();
-	size_t priv_size = ukarch_tls_tcb_size();
-	__detached_child_map = mmap(NULL, stack_size + tls_size + priv_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	__detached_child_map_size = stack_size + tls_size + priv_size;
-	void *new = __uk_copy_tls(__detached_child_map + stack_size + tls_size); // function defined in __uk_init_tls.c glue src file (musl)
+	__detached_child_map = mmap(NULL, stack_size + tls_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	__detached_child_map_size = stack_size + tls_size;
+	__detached_child_tls_area = __detached_child_map + stack_size;
+	void *tcb = __uk_copy_tls((void*) __detached_child_tls_area); // function defined in __uk_init_tls.c glue src file (musl)
 	void *stack = __detached_child_map +  stack_size;
 	int ctid;
 	
@@ -88,8 +76,9 @@ void test_detached()
                 | CLONE_THREAD | CLONE_SYSVSEM | CLONE_SETTLS
                 | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID | CLONE_DETACHED;
 
+	__detached_child_tls_ptr = (unsigned long) ukarch_tls_tlsp(__detached_child_tls_area);
 	/* Use the clone wrapper from musl. */
-	__clone((int (*)(void *)) detached_fun, stack, flags, new, &ctid, new, &ctid);
+	__clone((int (*)(void *)) detached_fun, stack, flags, tcb, &ctid, __detached_child_tls_ptr, &ctid);
 	/* clone will force the execution of child after it creates it,
          * but just to be sure the child executes and finishes,
 	 * we place some sleeps here.
