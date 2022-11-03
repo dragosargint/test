@@ -4,7 +4,6 @@
 
 extern int main_thread_tid;
 int __clone_child_thread_tid;
-unsigned long __clone_child_tls_ptr;
 unsigned long __clone_child_tls_area;
 unsigned long __clone_child_tls_ptr;
 struct uk_thread *__clone_child_uk_thread_ptr = NULL;
@@ -64,6 +63,39 @@ static int clone_thread_fun(void *arg)
 void test_clone()
 {
 	/* In this test we're trying to do what musl does with the clone syscall. */
+	/* Layout of the mapping x86_64
+	 * (there is also some padding but we ommit it):
+	 * map ----------------------------------------------------------------
+	 *                     ^ 
+	 *                     | STACK 
+	 *                     v 
+	 * stack --------------------------------------------------------------- 
+	 *                         ^           ^ 
+	 *                         |           | TLS SPACE 
+	 *                         |           v 
+	 * ukplat_tlsp_get(),tcb ->|-TLS AREA------------------------------------
+	 *                         |           ^
+	 *                         |           | LIBC TCB (e.g pthread structure)
+	 *                         v           v
+	 *----------------------------------------------------------------------
+	 *
+	 *
+	 * Layout of the mapping aarch64
+	 * (there is also some padding but we ommit it):
+	 * map ----------------------------------------------------------------
+	 *                    ^ 
+	 *                    |           STACK 
+	 *                    v 
+	 * stack --------------------------------------------------------------
+	 *                  tcb -> ^           ^ 
+	 *                         |           | LIBC tcb (e.g pthread structure) 
+	 *                         |           v 
+	 *      ukplat_tlsp_get()->|-TLS AREA-----------------------------------
+	 *                         |           ^
+	 *                         |           | TLS SPACE
+	 *                         v           v
+	 *--------------------------------------------------------------------
+	 */
 
 	size_t stack_size = 8 * 4096; // not using the default size
 	size_t tls_size = ukarch_tls_area_size();
@@ -82,10 +114,9 @@ void test_clone()
 	/* Use the clone wrapper from musl.
 	 * NB: this will call SYS_exit after clone_thread_fun() returns
 	 */
-	// __clone(func, stack, flags, arg, ptid, tls, ctid)
 	__clone(clone_thread_fun, stack, flags, tcb, &ctid, __clone_child_tls_ptr, &ctid);
 	/* clone will force the execution of child after it creates it,
-         * but just to be sure the child executes and finishes,
+	 * but just to be sure the child executes and finishes,
 	 * we place some sleeps here.
 	 */
 	unsigned int no_of_tries = 5;

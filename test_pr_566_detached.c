@@ -61,7 +61,39 @@ __noreturn static void detached_fun(void *args)
 void test_detached()
 {
 	/* In this test we're trying to do what musl does for detached threads. */
-
+	/* Layout of the mapping x86_64
+	 * (there is also some padding but we ommit it):
+	 * map ----------------------------------------------------------------
+	 *                     ^ 
+	 *                     | STACK 
+	 *                     v 
+	 * stack --------------------------------------------------------------- 
+	 *                         ^           ^ 
+	 *                         |           | TLS SPACE 
+	 *                         |           v 
+	 * ukplat_tlsp_get(),tcb ->|-TLS AREA------------------------------------
+	 *                         |           ^
+	 *                         |           | LIBC TCB (e.g pthread structure)
+	 *                         v           v
+	 *----------------------------------------------------------------------
+	 *
+	 *
+	 * Layout of the mapping aarch64
+	 * (there is also some padding but we ommit it):
+	 * map ----------------------------------------------------------------
+	 *                    ^ 
+	 *                    |           STACK 
+	 *                    v 
+	 * stack --------------------------------------------------------------
+	 *                  tcb -> ^           ^ 
+	 *                         |           | LIBC tcb (e.g pthread structure) 
+	 *                         |           v 
+	 *      ukplat_tlsp_get()->|-TLS AREA-----------------------------------
+	 *                         |           ^
+	 *                         |           | TLS SPACE
+	 *                         v           v
+	 *--------------------------------------------------------------------
+	 */
 	size_t stack_size = 8 * 4096; // not using the default size
 	size_t tls_size = ukarch_tls_area_size();
 	__detached_child_map = mmap(NULL, stack_size + tls_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
