@@ -1,11 +1,17 @@
 $(eval $(call addlib,test))
 
 TEST_SRCS-y += $(TEST_BASE)/test_pr_564.c
+
+ifeq (x86_64,$(CONFIG_UK_ARCH))
 TEST_SRCS-y += $(TEST_BASE)/test_pr_565.c
+TEST_SRCS-y += $(TEST_BASE)/helper.s
+UK_PROVIDED_SYSCALLS-$(CONFIG_LIBVFSCORE) += fork-0
+endif
+
 TEST_SRCS-y += $(TEST_BASE)/test_pr_566.c
 TEST_SRCS-y += $(TEST_BASE)/test_pr_566_clone.c
 TEST_SRCS-y += $(TEST_BASE)/test_pr_566_pthread_basic.c
 TEST_SRCS-y += $(TEST_BASE)/test_pr_566_detached.c
 TEST_SRCS-y += $(TEST_BASE)/main.c
-TEST_SRCS-y += $(TEST_BASE)/helper.s
-UK_PROVIDED_SYSCALLS-$(CONFIG_LIBVFSCORE) += fork-0
+
+
